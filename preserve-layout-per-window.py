@@ -7,31 +7,41 @@
 
 import argparse
 import i3ipc
-import signal
-import sys
 from functools import partial
 from collections import defaultdict
-id_to_layout = defaultdict(lambda :0)
+id_to_layouts = defaultdict(lambda :defaultdict(lambda :0))
 
-def on_window_focus(inactive_opacity, ipc, event):
+def on_window_focus(ipc, event):
     global prev_focused
-    global prev_workspace
+    print("Got event")
 
     focused = event.container
-    workspace = ipc.get_tree().find_focused().workspace().num
-    #import pdb; pdb.set_trace()
+    #if prev_focused and (True or prev_focused.app_id == 'termite'):
+    #    prev_focused.command('opacity 0.8')
 
-    if focused.id != prev_focused.id:  # https://github.com/swaywm/sway/issues/2859
-        current_layouts = set(list(map(lambda x:x.xkb_active_layout_index, ipc.get_inputs())))
-        current_layouts.remove(None)
-        current_layout = current_layouts.pop()
-        id_to_layout[prev_focused.id] = current_layout
-        if current_layout != id_to_layout[focused.id]:
-            ipc = i3ipc.Connection()
-            ipc.command(f'input * xkb_switch_layout {id_to_layout[focused.id]}')
+    if True or focused.app_id == 'termite':
+        tree = ipc.get_tree()
+        focused = tree.find_by_id(focused.id)
+        if focused:
+            curent_workspace = focused.workspace()
+            #from ipdb import set_trace; set_trace()
+            for node in curent_workspace.descendants():
+                node.command('opacity 0.8')
+            focused.command('opacity 1')
 
-        prev_focused = focused
-        prev_workspace = workspace
+
+    print(f"last_focused: {prev_focused}, new: {focused}")
+    if prev_focused and focused.id != prev_focused.id: 
+        current_layouts = {i.identifier: i.xkb_active_layout_index for i in  ipc.get_inputs()}
+        id_to_layouts[prev_focused.id] = current_layouts
+        ipc = i3ipc.Connection()
+        for l in current_layouts:
+            try:
+                ipc.command(f'input {l} xkb_switch_layout {id_to_layouts[focused.id][l]}')
+            except KeyError:
+                pass
+
+    prev_focused = focused
 
 
 
@@ -40,19 +50,18 @@ if __name__ == "__main__":
     transparency_val = "0.80"
 
     parser = argparse.ArgumentParser(
-        description="This script allows you to set the transparency of unfocused windows in sway."
-    )
-    parser.add_argument(
-        "--opacity",
-        "-o",
-        type=str,
-        default=transparency_val,
-        help="set opacity value in range 0...1",
+        description="This script tracks keyboard layouts of different windows and preserves them"
     )
     args = parser.parse_args()
+    ipc = None
+    while not ipc:
+        try:
+            ipc = i3ipc.Connection()
+            prev_focused = None
+        except Exception:
+            print("failed creating IPC. retrying...")
+            exit(2)
 
-    ipc = i3ipc.Connection()
-    prev_focused = None
-
-    ipc.on("window::focus", partial(on_window_focus, args.opacity))
+    print("Created IPC")
+    ipc.on("window::focus", partial(on_window_focus))
     ipc.main()
