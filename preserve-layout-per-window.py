@@ -65,3 +65,4 @@ if __name__ == "__main__":
     print("Created IPC")
     ipc.on("window::focus", partial(on_window_focus))
     ipc.main()
+    exit(1)
